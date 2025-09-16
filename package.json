@@ -2,8 +2,7 @@
   "name": "shop-chat-agent",
   "private": true,
   "scripts": {
-    "build": "remix build",
-    "postinstall": "npm run build",
+    "build": "remix vite:build",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
@@ -17,7 +16,8 @@
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
-    "vite": "vite"
+    "vite": "vite",
+    "postinstall": "npx prisma generate"
   },
   "type": "module",
   "engines": {
