@@ -24,7 +24,7 @@ const shopify = shopifyApp({
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
 });
-
+console.log("Env variables:Process", process.env.SHOPIFY_API_KEY, process.env.SHOPIFY_API_SECRET, process.env.SCOPES, process.env.SHOPIFY_APP_URL, process.env.PORT);
 export default shopify;
 export const apiVersion = ApiVersion.January25;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
