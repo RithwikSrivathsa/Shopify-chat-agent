@@ -8,8 +8,10 @@
   'use strict';
 
   /**
+   * 
    * Application namespace to prevent global scope pollution
    */
+  const DEPLOYED_CHAT_API_BASE = "https://shopify-app-embed-vlcnv.ondigitalocean.app";
   const ShopAIChat = {
     /**
      * UI-related elements and functionality
@@ -481,7 +483,7 @@
             prompt_type: promptType
           });
 
-          const streamUrl = 'https://localhost:3458/chat';
+          const streamUrl = `${DEPLOYED_CHAT_API_BASE}/chat`;
           const shopId = window.shopId;
 
           const response = await fetch(streamUrl, {
@@ -630,7 +632,7 @@
           messagesContainer.appendChild(loadingMessage);
 
           // Fetch history from the server
-          const historyUrl = `https://localhost:3458/chat?history=true&conversation_id=${encodeURIComponent(conversationId)}`;
+          const historyUrl = `${DEPLOYED_CHAT_API_BASE}/chat?history=true&conversation_id=${encodeURIComponent(conversationId)}`;
           console.log('Fetching history from:', historyUrl);
 
           const response = await fetch(historyUrl, {
@@ -779,8 +781,8 @@
           attemptCount++;
 
           try {
-            const tokenUrl = 'https://localhost:3458/auth/token-status?conversation_id=' +
-              encodeURIComponent(conversationId);
+            const tokenUrl = `${DEPLOYED_CHAT_API_BASE}/auth/token-status?conversation_id=${encodeURIComponent(conversationId)}`;
+
             const response = await fetch(tokenUrl);
 
             if (!response.ok) {
