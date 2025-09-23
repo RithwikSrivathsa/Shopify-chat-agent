@@ -1,6 +1,6 @@
 /**
  * Claude Service
- * Manages interactions with the Claude API (defensive + clearer errors)
+ * Manages interactions with the Claude API
  */
 import { Anthropic } from "@anthropic-ai/sdk";
 import AppConfig from "./config.server";
@@ -8,143 +8,95 @@ import systemPrompts from "../prompts/prompts.json";
 
 /**
  * Creates a Claude service instance
- * @param {string} apiKey - Claude API key. If omitted, will read from process.env.CLAUDE_API_KEY
+ * @param {string} apiKey - Claude API key
+ * @returns {Object} Claude service with methods for interacting with Claude API
  */
 export function createClaudeService(apiKey = process.env.CLAUDE_API_KEY) {
-  if (!apiKey || typeof apiKey !== "string" || apiKey.trim() === "") {
-    const msg = "CLAUDE_API_KEY is not set. Set CLAUDE_API_KEY in environment variables.";
-    console.error(msg);
-    throw new Error(msg);
-  }
-
   // Initialize Claude client
   const anthropic = new Anthropic({ apiKey });
 
   /**
-   * Normalize messages into an array that Claude SDK expects.
-   * Accepts null/undefined/strings and returns an array of `{ role, content }`.
-   */
-  function normalizeMessages(messages) {
-    if (!messages) return [];
-    if (!Array.isArray(messages)) {
-      // If it's a single string or object, try to coerce
-      if (typeof messages === "string") {
-        return [{ role: "user", content: messages }];
-      }
-      // if it's object, attempt best-effort conversion
-      if (typeof messages === "object") {
-        return [messages];
-      }
-      return [];
-    }
-    return messages.map((m) => {
-      // Ensure each message is an object with role & content
-      if (!m || typeof m !== "object") {
-        return { role: "user", content: String(m) };
-      }
-      // if content is an array/string/object, keep it (SDK may accept arrays for rich content)
-      return {
-        role: m.role || "user",
-        content: m.content ?? m.text ?? ""
-      };
-    });
-  }
-
-  /**
    * Streams a conversation with Claude
-   * @param {Object} params
-   * @param {Array|undefined} params.messages
-   * @param {string} params.promptType
-   * @param {Array} params.tools
-   * @param {Object} streamHandlers - { onText, onMessage, onToolUse, onContentBlock }
+   * @param {Object} params - Stream parameters
+   * @param {Array} params.messages - Conversation history
+   * @param {string} params.promptType - The type of system prompt to use
+   * @param {Array} params.tools - Available tools for Claude
+   * @param {Object} streamHandlers - Stream event handlers
+   * @param {Function} streamHandlers.onText - Handles text chunks
+   * @param {Function} streamHandlers.onMessage - Handles complete messages
+   * @param {Function} streamHandlers.onToolUse - Handles tool use requests
+   * @returns {Promise<Object>} The final message
    */
   const streamConversation = async (
     { messages, promptType = AppConfig.api.defaultPromptType, tools },
-    streamHandlers = {}
+    streamHandlers
   ) => {
-    // Defensive: coerce messages into an array, never null
-    const safeMessages = normalizeMessages(messages);
+    // Ensure system is always valid
+    const systemInstruction =
+      getSystemPrompt(promptType) || "You are a helpful assistant.";
 
-    const systemInstruction = getSystemPrompt(promptType);
+    // Ensure messages is always valid
+    const safeMessages =
+      Array.isArray(messages) && messages.length > 0
+        ? messages
+        : [{ role: "user", content: "Hello" }];
 
-    try {
-      // Create the stream - wrap in try so we can give a better error message
-      const stream = await anthropic.messages.stream({
-        model: AppConfig.api.defaultModel,
-        max_tokens: AppConfig.api.maxTokens,
-        system: systemInstruction,
-        messages: safeMessages,
-        tools: tools && tools.length > 0 ? tools : undefined
-      });
+    // Create stream with safe defaults
+    const stream = await anthropic.messages.stream({
+      model: AppConfig.api.defaultModel || "claude-3-haiku-20240307",
+      max_tokens: AppConfig.api.maxTokens || 512,
+      system: systemInstruction,
+      messages: safeMessages,
+      tools: tools && tools.length > 0 ? tools : undefined,
+    });
 
-      // Attach provided handlers if present
-      if (streamHandlers.onText && typeof streamHandlers.onText === "function") {
-        stream.on("text", streamHandlers.onText);
-      }
-      if (streamHandlers.onMessage && typeof streamHandlers.onMessage === "function") {
-        stream.on("message", streamHandlers.onMessage);
-      }
-      if (streamHandlers.onContentBlock && typeof streamHandlers.onContentBlock === "function") {
-        stream.on("contentBlock", streamHandlers.onContentBlock);
-      }
+    // Set up event handlers
+    if (streamHandlers.onText) {
+      stream.on("text", streamHandlers.onText);
+    }
 
-      // Wait for final message from the stream
-      const finalMessage = await stream.finalMessage();
+    if (streamHandlers.onMessage) {
+      stream.on("message", streamHandlers.onMessage);
+    }
 
-      // finalMessage might be null in error cases — handle defensively
-      if (!finalMessage) {
-        const errMsg = "Claude stream ended without a final message (null finalMessage).";
-        console.error(errMsg);
-        throw new Error(errMsg);
-      }
+    if (streamHandlers.onContentBlock) {
+      stream.on("contentBlock", streamHandlers.onContentBlock);
+    }
 
-      // If the final message contains tool_use blocks, run onToolUse handler for each
-      if (streamHandlers.onToolUse && typeof streamHandlers.onToolUse === "function" && Array.isArray(finalMessage.content)) {
-        for (const contentBlock of finalMessage.content) {
-          try {
-            if (contentBlock && contentBlock.type === "tool_use") {
-              // allow handler to run async
-              await streamHandlers.onToolUse(contentBlock);
-            }
-          } catch (innerErr) {
-            // don't break the loop; log and continue
-            console.error("Error in onToolUse handler:", innerErr);
-          }
+    // Wait for final message
+    const finalMessage = await stream.finalMessage();
+
+    // Process tool use requests
+    if (streamHandlers.onToolUse && finalMessage.content) {
+      for (const content of finalMessage.content) {
+        if (content.type === "tool_use") {
+          await streamHandlers.onToolUse(content);
         }
       }
-
-      return finalMessage;
-    } catch (error) {
-      // Provide a clearer error surface so the rest of your app can react to it
-      console.error("Error communicating with Claude API:", error && error.message ? error.message : error);
-      // Re-throw a normalized error so callers won't see SDK internals unexpectedly
-      const normalized = new Error(
-        error && error.message ? `Claude API error: ${error.message}` : "Unknown error from Claude API"
-      );
-      normalized.original = error;
-      throw normalized;
     }
+
+    return finalMessage;
   };
 
+  /**
+   * Gets the system prompt content for a given prompt type
+   * @param {string} promptType - The prompt type to retrieve
+   * @returns {string} The system prompt content
+   */
   const getSystemPrompt = (promptType) => {
-    try {
-      return (
-        systemPrompts.systemPrompts?.[promptType]?.content ||
-        systemPrompts.systemPrompts?.[AppConfig.api.defaultPromptType]?.content ||
-        ""
-      );
-    } catch (e) {
-      console.warn("Failed to load system prompt, falling back to empty string", e);
-      return "";
-    }
+    return (
+      systemPrompts.systemPrompts[promptType]?.content ||
+      systemPrompts.systemPrompts[AppConfig.api.defaultPromptType].content ||
+      "You are a helpful assistant."
+    );
   };
 
   return {
     streamConversation,
-    getSystemPrompt
+    getSystemPrompt,
   };
 }
 
 export default {
-  createClaudeService
+  createClaudeService,
 };
