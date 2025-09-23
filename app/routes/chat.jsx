@@ -173,13 +173,13 @@ async function handleChatSession({
     conversationHistory = dbMessages.map(dbMessage => {
       let content;
       try {
-        content = JSON.parse(dbMessage.content);
+        content = dbMessage.content ? JSON.parse(dbMessage.content) : "";
       } catch (e) {
-        content = dbMessage.content;
+        content = dbMessage.content || "";
       }
       return {
-        role: dbMessage.role,
-        content
+        role: dbMessage.role || "user",
+        content: content || ""
       };
     });
 
