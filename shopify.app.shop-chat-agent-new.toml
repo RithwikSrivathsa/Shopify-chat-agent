@@ -1,15 +1,16 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "a54d370d69f67a6db7b1b8054c2f34af"
+client_id = "f2f9e846a22aaa3d5103ac6d3c92537d"
 name = "shop-chat-agent-new"
 application_url = "https://example.com"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
+include_config_on_deploy = true
 
 [webhooks]
-api_version = "2025-10"
+api_version = "2026-01"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
